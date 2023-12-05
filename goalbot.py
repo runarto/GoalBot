@@ -7,6 +7,8 @@ import perms
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import timedelta, datetime
+import asyncio
+from apscheduler.jobstores.base import JobLookupError
 
 channel_id = perms.CHANNEL_ID
 
@@ -20,38 +22,57 @@ scheduler = AsyncIOScheduler()
 
 # Assuming get_todays_matches is defined as you provided
 
+client.event
+async def check_for_goals(match_id, matches):
 
-async def check_for_goals(match_id, channel):
-    goal_messages, current_status = logic.check_goals_and_create_message(match_id)[:2]
+    current_status = check_for_goals_and_status(match_id)
 
-    for message in goal_messages:
-        await channel.send(message)
+    job_id = f"match_{match_id}"
 
     if current_status != "FT":
         scheduler.add_job(check_for_goals, 'date', run_date=datetime.now() + timedelta(minutes=1), 
-                          args=[match_id, channel, scheduler])
+                          args=[match_id, channel, scheduler], id = job_id)
+        
+    if current_status == "FT":
+        for job in scheduler.get_jobs():
+            if job.id.startswith(f"check_goals_{match_id}"):
+                try:
+                    scheduler.remove_job(job.id)
+                except JobLookupError:
+                    pass  # Job was not found, no action needed
+        scheduler.remove(job_id)
+
+        
 
 async def schedule_goal_checks(matches, channel):
     for match in matches:
         match_start_time = parser.isoparse(match['date'])
-        # Schedule check_for_goals to start when the match starts and repeat every minute
+        job_id = f"check_goals_{match['match_id']}"  # Unique identifier for the job
         scheduler.add_job(check_for_goals, 'interval', minutes=1, 
                           start_date=match_start_time, 
-                          args=[match['match_id'], channel], 
-                          misfire_grace_time=60)  # handle slight delays in job execution
+                          args=[match['match_id'], matches], 
+                          misfire_grace_time=60, id=job_id)
+    jobs = scheduler.get_jobs()
+    print("Scheduled Jobs:")
+    for job in jobs:
+        print(f"Job ID: {job.id}")
+        print(f"Next Run Time: {job.next_run_time}")
+        print(f"Job Function: {job.func_ref}")
+        print("-" * 20)
+
+
 
 async def main():
-    await client.wait_until_ready()
-
+    
     # Schedule get_todays_matches at midnight
-    scheduler.add_job(logic.get_todays_matches, 'cron', hour=0)
-
-    # Get today's matches and schedule goal checks (if bot was down)
-    matches = logic.get_todays_matches()
-    await schedule_goal_checks(matches, channel)
+    scheduler.add_job(lambda: asyncio.create_task(logic.get_todays_matches(1)), 'cron', hour=0, id = "get_todays_matches")
 
     # Start the scheduler
     scheduler.start()
+
+    # Get today's matches and schedule goal checks (if bot was down)
+    matches = logic.get_todays_matches(1)
+    await schedule_goal_checks(matches, channel)
 
     # Start the Discord bot
     await client.start(perms.TOKEN)  # Replace 'your_token' with your bot's token
@@ -61,8 +82,8 @@ async def main():
 async def on_ready():
     print(f'We have logged in as {client.user}')
 
-
-async def check_for_goals_and_status(match_id, channel):
+@client.event
+async def check_for_goals_and_status(match_id):
 
     # Check the current status of the match
     messages, current_status, home_team, away_team, home_team_goals, away_team_goals = logic.check_goals_and_create_message(match_id)
@@ -76,4 +97,6 @@ async def check_for_goals_and_status(match_id, channel):
     if current_status != "FT":
         for message in messages:
             await channel.send(message)
+        
+    return current_status
 
