@@ -14,8 +14,12 @@ intents.reactions = True
 intents.message_content = True
 client = discord.Client(intents=intents)
 channel = client.get_channel(channel_id)
+local_dict = {}
 
 #Returnerer liste over kamper denne dagen. Kjør denne en gang daglig klokka 00:00
+
+
+
 
 
 def get_todays_matches(x_days):
@@ -28,26 +32,31 @@ def get_todays_matches(x_days):
         "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
         "x-rapidapi-key": API_TOKEN  # Be cautious with your API key
     }
-    query_fixtures = {
-        "league": "39",
-        "season": "2023",
-        "timezone": "Europe/Oslo",
-        "from": today_date,
-        "to": formatted_new_date 
-    }
+    league_ids = ["39", "103"]
+    match_details = [] 
+
+    for league_id in league_ids:
+        query_fixtures = {
+            "league": league_id,
+            "season": "2023",
+            "timezone": "Europe/Oslo",
+            "to": today_date,
+            "from": formatted_new_date
+        }
     
-    response = requests.get(api_url, headers=headers, params=query_fixtures)
-    match_details = []  # Initialize match_details outside the if statement
-    if response.status_code == 200:
-        data = response.json()
-        for fixture in data['response']:
-            match_info = {
-                'match_id': fixture['fixture']['id'],  # Added line to include match ID
-                'date': fixture['fixture']['date'],
-                'current_status': fixture['fixture']['status']['short']
-            }
-            match_details.append(match_info)  # Correct indentation, inside the loop
-            print(match_info)
+        response = requests.get(api_url, headers=headers, params=query_fixtures)
+        # Initialize match_details outside the if statement
+        if response.status_code == 200:
+            data = response.json()
+            for fixture in data['response']:
+                match_info = {
+                    'match_id': fixture['fixture']['id'],  # Added line to include match ID
+                    'date': fixture['fixture']['date'],
+                    'current_status': fixture['fixture']['status']['short'],
+                    'home_team': fixture['teams']['home']['name']
+                }
+                match_details.append(match_info)  # Correct indentation, inside the loop
+    
     return match_details
 
 
@@ -85,6 +94,8 @@ def get_current_datetime():
 
 
 
+#Brukes til å hente ut events for en kamp
+
 
 def check_goals_and_create_message(match_id):
     api_url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures/events?fixture={match_id}"
@@ -118,34 +129,77 @@ def check_goals_and_create_message(match_id):
         for event in data['response']:
         # Initialize assist_info to a default value
             assist_info = ""
+            goal_type = ""
 
-            if event['type'] == 'Normal Goal' or event['type'] == 'Own Goal':
-                goal_type = "Mål" if event['type'] == 'Normal Goal' else "Selvmål"
-                team_name = event['team']['name']
-                player_name = event['player']['name']
-            
-            if goal_type == "Mål":
-                assist_info = event.get('assist', {}).get('name', 'Ingen målgivende')
+            # Check for Normal Goal, Own Goal, Penalty, or VAR
+            if event['type'] == 'Goal':
+                # Check if the goal is a penalty
+                goal_type = "straffe" if 'Penalty' in event['detail'] else "Mål"
+            elif event['type'] == 'Own Goal':
+                goal_type = "selvmål"
 
-                # Construct the message based on goal type
-            if event['type'] == "Normal Goal":
-                message = f"{goal_type} for {team_name}!\n"
-            elif event['type'] == "Own Goal":
-                message = f"{team_name} scorer {goal_type}!\n"
 
-        # Common part of the message
-            message += f"{home_team} {home_team_goals} - {away_team_goals} {away_team}\n" \
-                   f"Mål: {player_name}\n"
-            if assist_info:
-                message += f"Målgivende: {assist_info}"
+            if (event['type'] == 'VAR') and (event['detail'] == 'Goal cancelled'):
+                message += f"Målet til {event['team']['name']} ble annulert\n"
+                message += f"{home_team} {home_team_goals} - {away_team_goals} {away_team}\n"
                 messages.append(message)
 
-    return messages, current_status, home_team, away_team, home_team_goals, away_team_goals
+            
+            if goal_type:
+                team_name = event['team']['name']
+                player_name = event['player']['name']
+                if goal_type in ["Mål", "Straffe", "Selvmål"]:
+                    assist_info = event.get('assist', {}).get('name', 'Ingen målgivende')
+                
+                if goal_type == "Mål":
+                    message = f"**{goal_type} for {team_name}!**\n"
+                elif goal_type == "Selvmål":
+                    message = f"**{team_name} scorer {goal_type}!**\n"
+                elif goal_type == "Straffe":
+                    message = f"**{team_name} scorer på {goal_type}!**\n"
+
+
+                if team_name == home_team:
+                    message += f"{home_team} [{home_team_goals}] - {away_team_goals} {away_team}\n" \
+                    f"Mål: {player_name}\n"
+                    message += f"Målgivende: {assist_info}"
+                    messages.append(message)
+            
+                else:
+                    message += f"{home_team} {home_team_goals} - [{away_team_goals}] {away_team}\n" \
+                    f"Mål: {player_name}\n"
+                    message += f"Målgivende: {assist_info}"
+                    messages.append(message)
+
+    return messages[-1], current_status, home_team, away_team, home_team_goals, away_team_goals
+
+
+#Her henter vi ut messages[-1] fordi det er det siste som skjedde. 
 
 
 
+#Brukes til feilsøking
 
 
+def get_fixture_events(match_id):
+    api_url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures/events?fixture={match_id}"
+    headers = {
+        "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
+        "x-rapidapi-key": API_TOKEN
+    }
+
+    response = requests.get(api_url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        for event in data['response']:
+            print(event)
+    else:
+        return f"Error: Unable to fetch events for match {match_id}, Status Code: {response.status_code}"
+    
+
+#print(get_fixture_events(1035309))
+
+#print(get_todays_matches(-3))
 
 
-
+check_goals_and_create_message(1035309)
