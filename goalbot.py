@@ -110,7 +110,7 @@ async def check_for_goals_and_status(match_id):
         if message in logic.local_dict:
             messages.remove(message)
         else:
-            logic.local_dict[home_team] = message
+            logic.local_dict[match_id] = message
 
 
     # If the game just finished, send a message
