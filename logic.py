@@ -139,12 +139,10 @@ def check_goals_and_create_message(match_id):
             if assist_info:
                 message += f"Målgivende: {assist_info}"
                 messages.append(message)
-            
-            else:
-                message = "No goals yet.\n"
-                messages.append(message)
 
     return messages, current_status, home_team, away_team, home_team_goals, away_team_goals
+
+
 
 
 

@@ -30,9 +30,8 @@ async def check_for_goals(match_id, matches):
     job_id = f"match_{match_id}"
 
     if current_status != "FT":
-        scheduler.add_job(check_for_goals, 'date', run_date=datetime.now() + timedelta(minutes=1), 
-                          args=[match_id, channel, scheduler], id = job_id)
-        
+        return
+    
     if current_status == "FT":
         for job in scheduler.get_jobs():
             if job.id.startswith(f"check_goals_{match_id}"):
