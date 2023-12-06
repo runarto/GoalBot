@@ -18,15 +18,24 @@ intents.members = True
 intents.reactions = True
 intents.message_content = True
 client = discord.Client(intents=intents)
-channel = client.get_channel(channel_id)
 scheduler = AsyncIOScheduler()
 
 # Assuming get_todays_matches is defined as you provided
 
+
+def async_wrapper(coroutine_func, *args, **kwargs):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(coroutine_func(*args, **kwargs))
+    loop.close()
+    return result
+
+
 client.event
 async def check_for_goals(match_id, matches):
 
-    current_status = check_for_goals_and_status(match_id)
+    current_status = await check_for_goals_and_status(match_id)
+
 
     job_id = f"match_{match_id}"
 
@@ -48,15 +57,17 @@ async def schedule_goal_checks(matches, channel):
     for match in matches:
         match_start_time = parser.isoparse(match['date'])
         job_id = f"check_goals_{match['match_id']}"  # Unique identifier for the job
-        scheduler.add_job(check_for_goals, 'interval', minutes=1, 
-                          start_date=match_start_time, 
-                          args=[match['match_id'], matches], 
-                          misfire_grace_time=60, id=job_id)
+        scheduler.add_job(async_wrapper, 
+                  args=(check_for_goals, match['match_id'], matches),
+                  trigger='interval', minutes=1, 
+                  misfire_grace_time=60, id=job_id,
+                  start_date=match_start_time)
         
         game_started_job_id = f"game_started_{match['home_team']}"
-        scheduler.add_job(lambda: asyncio.create_task(game_started(match['match_id'])),
-                          trigger=DateTrigger(run_date=match_start_time),
-                          id=game_started_job_id)
+        scheduler.add_job(async_wrapper, args=(game_started, match['match_id']),
+                  trigger=DateTrigger(run_date=match_start_time),
+                  id=game_started_job_id)
+
         
     jobs = scheduler.get_jobs()
 
@@ -70,6 +81,7 @@ async def schedule_goal_checks(matches, channel):
 
 
 async def main():
+    channel = client.get_channel(channel_id)
     
     # Schedule get_todays_matches at midnight
     matches = scheduler.add_job(lambda: asyncio.create_task(logic.get_todays_matches(0)), 'cron', hour=0, id = "get_todays_matches")
@@ -94,6 +106,7 @@ async def on_ready():
 
 @client.event 
 async def game_started(match_id):
+    channel = client.get_channel(channel_id)
     messages, current_status, home_team, away_team, home_team_goals, away_team_goals = logic.check_goals_and_create_message(match_id)
     if current_status in ['1H', '2H', 'HT', 'ET', 'P', 'LIVE']:
         message = f"Kamp startet: {home_team} - {away_team}"
@@ -102,6 +115,7 @@ async def game_started(match_id):
 
 @client.event
 async def check_for_goals_and_status(match_id):
+    channel = client.get_channel(channel_id)
 
     # Check the current status of the match
     messages, current_status, home_team, away_team, home_team_goals, away_team_goals = logic.check_goals_and_create_message(match_id)
@@ -124,4 +138,3 @@ async def check_for_goals_and_status(match_id):
             await channel.send(message)
         
     return current_status
-
