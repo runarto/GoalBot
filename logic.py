@@ -125,11 +125,21 @@ def check_goals_and_create_message(match_id):
         away_team_goals = fixture['goals']['away']
         home_team = fixture['teams']['home']['name']
         away_team = fixture['teams']['away']['name']
+
+        test = []
         
         for event in data['response']:
         # Initialize assist_info to a default value
             assist_info = ""
             goal_type = ""
+            time_played = event['time']['elapsed']
+            extra_time = event['time']['extra']
+
+            if extra_time is None:
+                time_played = f"{time_played}'"
+            else:
+                time_played = f"{time_played}+{extra_time}'"
+          
 
             # Check for Normal Goal, Own Goal, Penalty, or VAR
             if event['type'] == 'Goal':
@@ -141,7 +151,7 @@ def check_goals_and_create_message(match_id):
 
             if (event['type'] == 'VAR') and (event['detail'] == 'Goal cancelled'):
                 message += f"Målet til {event['team']['name']} ble annulert\n"
-                message += f"{home_team} {home_team_goals} - {away_team_goals} {away_team}\n"
+                message += f"{home_team} {home_team_goals} - {away_team_goals} {away_team} {time_played}\n "
                 messages.append(message)
 
             
@@ -160,18 +170,19 @@ def check_goals_and_create_message(match_id):
 
 
                 if team_name == home_team:
-                    message += f"{home_team} [{home_team_goals}] - {away_team_goals} {away_team}\n" \
+                    message += f"{home_team} [{home_team_goals}] - {away_team_goals} {away_team} {time_played}\n" \
                     f"Mål: {player_name}\n"
                     message += f"Målgivende: {assist_info}"
                     messages.append(message)
             
                 else:
-                    message += f"{home_team} {home_team_goals} - [{away_team_goals}] {away_team}\n" \
+                    message += f"{home_team} {home_team_goals} - [{away_team_goals}] {away_team} {time_played}\n" \
                     f"Mål: {player_name}\n"
                     message += f"Målgivende: {assist_info}"
                     messages.append(message)
 
-    return messages[-1], current_status, home_team, away_team, home_team_goals, away_team_goals
+    print(messages)
+    return messages, current_status, home_team, away_team, home_team_goals, away_team_goals
 
 
 #Her henter vi ut messages[-1] fordi det er det siste som skjedde. 
