@@ -15,6 +15,8 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 channel = client.get_channel(channel_id)
 local_dict = {}
+curr = None
+last = None
 
 #Returnerer liste over kamper denne dagen. Kjør denne en gang daglig klokka 00:00
 
@@ -60,6 +62,9 @@ def get_todays_matches(x_days):
     return match_details
 
 
+print(get_todays_matches(0))
+
+
 
 def check_if_game_started():
     api_url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
@@ -97,7 +102,7 @@ def get_current_datetime():
 #Brukes til å hente ut events for en kamp
 
 
-def check_goals_and_create_message(match_id):
+async def check_goals_and_create_message(match_id):
     api_url = f"https://api-football-v1.p.rapidapi.com/v3/fixtures/events?fixture={match_id}"
     headers = {
         "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
@@ -132,6 +137,7 @@ def check_goals_and_create_message(match_id):
         # Initialize assist_info to a default value
             assist_info = ""
             goal_type = ""
+            message = ""
             time_played = event['time']['elapsed']
             extra_time = event['time']['extra']
 
@@ -181,7 +187,6 @@ def check_goals_and_create_message(match_id):
                     message += f"Målgivende: {assist_info}"
                     messages.append(message)
 
-    print(messages)
     return messages, current_status, home_team, away_team, home_team_goals, away_team_goals
 
 
@@ -208,9 +213,9 @@ def get_fixture_events(match_id):
         return f"Error: Unable to fetch events for match {match_id}, Status Code: {response.status_code}"
     
 
-#print(get_fixture_events(1035309))
+print(get_fixture_events(1035322))
 
-#print(get_todays_matches(-3))
+print(get_todays_matches(0))
 
 
-check_goals_and_create_message(1035309)
+#check_goals_and_create_message(1035309)

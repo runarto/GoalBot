@@ -23,21 +23,13 @@ scheduler = AsyncIOScheduler()
 # Assuming get_todays_matches is defined as you provided
 
 
-def async_wrapper(coroutine_func, *args, **kwargs):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    result = loop.run_until_complete(coroutine_func(*args, **kwargs))
-    loop.close()
-    return result
+
 
 
 client.event
 async def check_for_goals(match_id, matches):
 
     current_status = await check_for_goals_and_status(match_id)
-
-
-    job_id = f"match_{match_id}"
 
     if current_status in ["1H", "2H", "HT", "ET", "BT", "P", "LIVE"]:
         return
@@ -49,7 +41,6 @@ async def check_for_goals(match_id, matches):
                     scheduler.remove_job(job.id)
                 except JobLookupError:
                     pass  # Job was not found, no action needed
-        scheduler.remove(job_id)
 
         
 
@@ -57,16 +48,22 @@ async def schedule_goal_checks(matches, channel):
     for match in matches:
         match_start_time = parser.isoparse(match['date'])
         job_id = f"check_goals_{match['match_id']}"  # Unique identifier for the job
-        scheduler.add_job(async_wrapper, 
-                  args=(check_for_goals, match['match_id'], matches),
-                  trigger='interval', minutes=1, 
-                  misfire_grace_time=60, id=job_id,
-                  start_date=match_start_time)
-        
+        scheduler.add_job(
+        check_for_goals,
+        args=(match['match_id'], matches),
+        trigger='interval',
+        minutes=1,
+        misfire_grace_time=60,
+        id=job_id,
+        start_date=match_start_time)
+
         game_started_job_id = f"game_started_{match['home_team']}"
-        scheduler.add_job(async_wrapper, args=(game_started, match['match_id']),
-                  trigger=DateTrigger(run_date=match_start_time),
-                  id=game_started_job_id)
+        scheduler.add_job(
+        game_started,
+        args=(match['match_id'],),
+        trigger=DateTrigger(run_date=match_start_time),
+        id=game_started_job_id)
+
 
         
     jobs = scheduler.get_jobs()
@@ -118,23 +115,35 @@ async def check_for_goals_and_status(match_id):
     channel = client.get_channel(channel_id)
 
     # Check the current status of the match
-    messages, current_status, home_team, away_team, home_team_goals, away_team_goals = logic.check_goals_and_create_message(match_id)
+    messages, current_status, home_team, away_team, home_team_goals, away_team_goals = await logic.check_goals_and_create_message(match_id)
 
-    for message in messages:
-        if message in logic.local_dict:
-            messages.remove(message)
-        else:
-            logic.local_dict[match_id] = message
+    # Ensure each match_id has a set in logic.local_dict
+    if match_id not in logic.local_dict:
+        logic.local_dict[match_id] = set()
+
+    # Filter out the duplicates from messages
+    new_messages = [message for message in messages if message not in logic.local_dict[match_id]]
+
+    # Update the set with new messages
+    logic.local_dict[match_id].update(new_messages)
+
+    # Use new_messages for further processing
+
+
+
 
 
     # If the game just finished, send a message
     if current_status in  ["FT", "AET", "PEN"]:
         await channel.send(f"FT: {home_team} {home_team_goals} - {away_team_goals} {away_team}\n")
-        return  # Stop further checks for this match
+        return  current_status# Stop further checks for this match
 
     # Check and send goal messages if the game is still ongoing
     if current_status in ["1H", "2H", "HT", "ET", "BT", "P", "LIVE"]:
-        for message in messages:
+        for message in new_messages:
             await channel.send(message)
         
     return current_status
+
+
+
